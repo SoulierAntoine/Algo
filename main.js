@@ -4,30 +4,6 @@ let Cell = require('./environment/cell');
 const ALGO = {
     ASTAR: {
         solve: function (graph) {
-            let current;
-            do {
-                current = graph.open[0];
-                const remove = graph.open.findIndex(c => c.id === current.id);
-                graph.open.splice(remove, 1);
-                graph.closed.push(current);
-
-                for ([node, distance] of current.neighbors) {
-                    if (graph.closed.find(c => c.id === node.id) === undefined) {
-                        // Set which node we are from
-                        node.from = current;
-                        // Set the distance from the start
-                        node.distance = current.distance + distance;
-                        // Insert (from smallest to biggest distance)
-                        graph.add(graph.open, node);
-                    }
-                }
-            } while (!current.isGoal);
-
-            return current;
-        },
-    },
-    DIJKSTRA: {
-        solve: function (graph) {
             let current = graph.open[0];
 
             while (!current.isGoal) {
@@ -44,18 +20,53 @@ const ALGO = {
                     // Only search for nodes that has not been visited previously (contained in close)
                     if (graph.closed.find(c => c.id === node.id) === undefined) {
 
+                        // What will be inserted in open needs to be a new reference
+                        // Otherwise we would edit what's already in open
+                        let candidate = node.copy();
+
                         // Set which node we are from
-                        node.from = current;
+                        candidate.from = current;
 
                         // Set the distance for this node from the start
                         // g(n') = g(n) + c(n, n')
-                        node.distance = current.distance + distance;
+                        candidate.distance = current.distance + distance;
 
-                        // Insert (from smallest to biggest distance)
-                        graph.add(graph.open, node);
+                        // If node n' is already in open
+                        if (graph.open.find(c => c.id === candidate.id) !== undefined) {
+                            // If node n' is better than a node with similar id generated previously, replace it with n'
+                            const remove = graph.check(graph.open, candidate);
+                            if (remove !== -1) {
+                                graph.open.splice(remove, 1);
+                                graph.add(graph.open, candidate);
+                            }
+                        } else {
+                            // Insert in open (in ascending order depending on f(n))
+                            graph.add(graph.open, candidate);
+                        }
                     }
                 }
             }
+
+            return current;
+        },
+    },
+    DIJKSTRA: {
+        solve: function (graph) {
+            let current;
+            do {
+                current = graph.open[0];
+                const remove = graph.open.findIndex(c => c.id === current.id);
+                graph.open.splice(remove, 1);
+                graph.closed.push(current);
+
+                for ([node, distance] of current.neighbors) {
+                    if (graph.closed.find(c => c.id === node.id) === undefined) {
+                        node.from = current;
+                        node.distance = current.distance + distance;
+                        graph.add(graph.open, node);
+                    }
+                }
+            } while (!current.isGoal);
 
             return current;
         }
@@ -119,6 +130,7 @@ const ALGO = {
         getGraph2: function() {
             // Create instances
             let n0 = new Cell("n0"); n0.heuristic = 9;
+            n0.distance = 0;
             n0.isStart = true;
 
             let n1 = new Cell("n1"); n1.heuristic = 2;
@@ -146,12 +158,8 @@ const ALGO = {
             return new Graph(open, closed);
         }
     }
-}
+};
 
 const graph = ALGO.GRAPH.getGraph();
-// graph.add(graph.open, new Cell("test"));
-// let a = new Call("test2"); a.distance = 4;
-// graph.add(graph.open, a);
-
-const solution = ALGO.DIJKSTRA.solve(graph);
+const solution = ALGO.ASTAR.solve(graph);
 console.log('solution: ', ALGO.GRAPH.displaySolution(solution));

@@ -1,5 +1,4 @@
 class Cell {
-
     constructor(id) {
         this._id = id;
         this._distance = Number.POSITIVE_INFINITY;
@@ -8,13 +7,13 @@ class Cell {
         this._from = null;
 
         // Used only in A*
-        this._heuristic = null;
+        this._heuristic = 0;
+        this._evaluation = this.distance + this.heuristic;
     }
 
-    toString() {
-        return `<${this._id} - ${this._distance}>`;
-    }
+    copy() { return Object.assign(new Cell(this.id), this); }
 
+    toString() { return `<${this._id} - ${this._distance}>`; }
 
     get id() { return this._id; }
 
@@ -22,13 +21,16 @@ class Cell {
     get heuristic() { return this._heuristic; }
     set heuristic(value) { this._heuristic = value }
 
-
     get from() { return this._from; }
     set from(value) { this._from = value }
 
     // g(n) =>  cost of the best path found until now (from start to node n)
     get distance() { return this._distance; }
     set distance(value) { this._distance = value; }
+
+    // f(n) => g(n) + h(n)
+    // Get an estimate for getting to the goal from node n
+    get evaluation() { return this.distance + this.heuristic; }
 
     // transition(n) => return all successors nodes for node n
     get neighbors() { return this._neighbors; }

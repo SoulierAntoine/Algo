@@ -6,16 +6,22 @@ class Graph {
 
     // Add nodes to the target, sorted in ascending order by f(n)
     add(target, value) {
-        const insert = target.findIndex(c => this._eval(c, value));
-        target.splice(insert, 0, value);
+        const insert = target.findIndex(c => c.evaluation > value.evaluation);
+        target.splice((insert !== -1) ? insert : target.length, 0, value);
     }
 
+    // Check if target contains a node with a similar id of the value
+    // If so, check if it is a better node by checking its evaluation function
+    // If so, returns the index that needs to be replaced
+    // Else, returns -1
+    check(target, value) {
+        const visited = target.findIndex(c => c.id === value.id);
+        if (visited === -1) return -1;
 
-    // f(n) => g(n) + h(n)
-    // Get an estimate for getting to the goal from node n
-    // TODO: add heuristic h(n)
-    _eval(cell, value) {
-        return cell.distance > value.distance;
+        const similar = target[visited];
+        if (similar.evaluation < value.evaluation) return -1;
+
+        return visited;
     }
 
     get open() { return this._open; }
