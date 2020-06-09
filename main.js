@@ -67,46 +67,60 @@ const ALGO = {
                 let genes = Array.from(Array(chessboardSize), (_, i) => ++i);
 
                 return Array.from(Array(chessboardSize), (_) => {
-                    const index = ALGO.GENETIC.getRandom(genes.length - 1);
+                    const index = ALGO.GENETIC.getRandom(0, genes.length);
                     return genes.splice(index, 1)[0];
                 });
             });
         },
         SELECTOR: {
+            // Choose the best solutions
             elitist: (solutions) => {
+                let elite = solutions
+                    .map((s, i) => ({ index: i, note: this.evaluator(s)}))
+                    .sort((a,b) => b.note - a.note)
+                [0];
 
+                return elite.index;
             },
-            note: (solutions) => {
+            // The best solution is the most likely to be selected
+            note: (solutions, chessboardSize) => {
                 const notes = solutions.map(this.evaluator);
-                const total = notes.reduce((acc, cur) => acc + cur);
-                // const percents = notes.map(n => (n / total) * 100);
-                const percents = notes.map(n => (n / total) * 100);
-                console.log('percent: ', percents);
+                let percents = notes.map(n => n * 100 / ALGO.GENETIC.getMaxPossibleCollisions(chessboardSize));
 
-                let random = ALGO.GENETIC.getRandom(100);
                 let cumulative = 0;
-                for (let i = 0; i < percents.length; i++) {
-                    cumulative += percents[i];
-                    if (random < cumulative)
-                        return percents[i];
-                }
+                const sum = percents.reduce((acc, el) => acc + el, 0);
+                percents = percents.map(el => (cumulative = el + cumulative));
+                const random = Math.random() * sum;
 
-                return percents.sort((a,b) => b - a)[0];
+                return percents.filter(el => el <= random).length;
             },
-            rank: (solutions) => {
+            // Select randomly tournamentSize element of the populations, return the best
+            tournament: (solutions, tournamentSize) => {
+                const randomIndexes = [];
+                const selected = Array.from(Array(tournamentSize), (_, i) => {
+                    let random;
+                    do  { random = ALGO.GENETIC.getRandom(0, solutions.length);
+                    } while (randomIndexes.includes(random));
+                    randomIndexes.push(random);
+                    return solutions[random];
+                });
 
-            },
-            tournament: (solutions) => {
+                const champion = selected
+                    .map((s, i) => ({ index: i, note: this.evaluator(s) }))
+                    .sort((a, b) => b.note - a.note)
+                [0];
 
+                return champion.index;
             }
         },
         EVALUATOR: (solution) => {
+            // Count the number of avoided collisions, the goal is to maximize this value
             return solution.reduce((collisions, position, positionIndex, src) => {
                 // If we are at the last position, all possible collisions have been calculated
                 if (positionIndex === src.length - 1) return collisions;
 
                 // Check each next element
-                collisions += src.reduce((acc, cur, index) => {
+                collisions -= src.reduce((acc, cur, index) => {
                     // Still need this for the index to increase
                     if (index <= positionIndex) return acc;
                     // Check rows
@@ -118,52 +132,138 @@ const ALGO = {
                 }, 0);
 
                 return collisions;
-            }, 0)
+            }, ALGO.GENETIC.getMaxPossibleCollisions(solution.length))
         },
         CROSSOVER: (solutionA, solutionB) => {
-
+            let separator = ALGO.GENETIC.getRandom(0, solutionA.length);
+            return [].concat(solutionA.slice(0, separator), solutionB.slice(separator, solutionB.length));
         },
         MUTATOR: (solution) => {
-
+            const index = ALGO.GENETIC.getRandom(0, solution.length);
+             // Random integer between 1 and less than 9
+            solution[index] = ALGO.GENETIC.getRandom(1, solution.length + 1);
+            return solution;
         },
         STOP: {
             quality: (solutions) => {
-
+                const best = solutions.find(s => this.evaluator(s) === ALGO.GENETIC.getMaxPossibleCollisions(s.length));
+                return best !== undefined;
             },
             iteration: (max, current) => {
-
+                return current >= max;
             },
             plateau: (solutions, threshold) => {
+                let plateau = solutions
+                    .map(this.evaluator)
+                    .sort((a,b) => b.note - a.note)
+                    .slice(0, threshold);
 
+                return plateau.every(s => s === plateau[0]);
             }
         },
-        solve: (GA) => {
-            if (Object.keys(GA).length === 0 || (GA.chessboardSize < 3 || GA.chessboardSize > 9))
+        solve: (GA, maxIteration, miscellaneous) => {
+            if (Object.keys(GA).length === 0)
                 return -1;
 
-            /*
-                ideally a node is represented as a string (representing its genetic code, it's simpler to visualize crossover / mutation)
-                generate randomly a population k
-                until an "end criteria" is met (optional) or after certain number of iterations
-                    new_pop = []
-                    for each element n of the population,
-                        get the one that minimize F(n) (we're looking to have as low collisions as possible, maximum being 28)
-                            ie we get all the collision possible, and for each, we normalize and it gives us the %age of being selected
-                            eg F(n) for several nodes gives 24, 23, 20, 11, we divide 24 by the sum of the other, giving 31%
-                        get another n' that minimize F(n)
-                        create another n* that comes from a crossover between n and n'
-                        small pbity of adding a mutation to n*
-                        add n* to new_pop
-                    population = new_pop
-                return the n in pop with best F(n)
-             */
-            // const population = generator()
+            let stop = false;
+            let iteration = 0;
+            let population = GA.generator(GA.populationSize, GA.chessboardSize);
+
+            console.log('running GA...');
+            console.time("run");
+            do {
+                iteration++;
+                console.log('generation: ', iteration);
+                let newPopulation = [];
+
+                for (const p of population) {
+                    const indexA = select(GA.selector.name);
+                    const bestA = population[indexA];
+                    const tmp = population.splice(indexA, 1);
+
+                    const indexB = select(GA.selector.name);
+                    const bestB = population[indexB];
+
+                    let added = GA.crossover(bestA, bestB);
+                    const percent = ALGO.GENETIC.getRandom(0,100);
+                    if (percent < 25)
+                        added = GA.mutator(added);
+                    newPopulation.push(added);
+                    population.push(tmp[0]);
+                }
+                population = newPopulation;
+                GA.stop.forEach(s => {
+                    if (stop) return;
+                    switch (s.name) {
+                        case "quality":     stop = s(population); break;
+                        case "iteration":   stop = s(maxIteration, iteration); break;
+                        case "plateau":     stop = s(population, miscellaneous.plateau); break;
+                    }
+                })
+            } while (!stop && iteration < maxIteration);
+            console.timeEnd("run");
+            console.log('stopped after ', iteration, ' iteration(s)');
+
+            const bests = population
+                .map((s,i) => ({ note: GA.evaluator(s), index: i}))
+                .sort((a,b) => b.note - a.note);
+
+            return population[bests[0].index];
+
+            function select(name) {
+                switch (name) {
+                    case "elitist":     return GA.selector(population);
+                    case "note":        return GA.selector(population, GA.chessboardSize);
+                    case "tournament":  return GA.selector(population, miscellaneous.tournamentSize);
+                }
+            }
         },
-        getRandom: (max) => {
-            return Math.floor(Math.random() * Math.floor(max));
+        getRandom: (min, max) => {
+            // Get a random value equals or greater than min, and lower than max.
+            min = Math.ceil(min);
+            max = Math.floor(max);
+            return  Math.floor(Math.random() * (max - min)) + min;
+        },
+        getMaxPossibleCollisions: (chessboardSize) => {
+            return Math.floor((chessboardSize * 7) / 2);
         },
         displaySolution: (solution) => {
 
+            console.log('solution: ', solution, ' - ', this.evaluator(solution), '/', ALGO.GENETIC.getMaxPossibleCollisions(this.chessboardSize));
+
+            // Upper and lower border
+            let border = "+ ";
+            for (let i = 0; i < solution.length - 1; i++) { border += "----" }
+            border += "- +\n";
+
+            let separator = "|-";
+            for (let i = 0; i < solution.length - 1; i++) { separator += "----" }
+            separator += "--|\n";
+
+            let display = "";
+            let k = solution.length;
+
+            display += border;
+
+            for (let i = 1; i <=  (2 * solution.length - 1); i++) {
+                if (i % 2 === 1) {
+                    for (let j = 0; j < solution.length; j++) {
+                        if (j === 0) display += "|";
+                        if (j === solution.length) display += "  |";
+                        if (solution[j] === k) display += " ¤ |";
+                        else display +=  "   |";
+                    }
+                    k--;
+                } else {
+                    display += "\n";
+                    display += separator;
+                }
+            }
+
+            display += "\n";
+            display += border;
+            console.log(display);
+            return display;
         }
     },
     DIJKSTRA: {
@@ -308,45 +408,23 @@ const ALGO = {
     }
 };
 
-/* const graph = ALGO.GRAPH.getGraph();
-const solution = ALGO.ASTAR.solve(graph);
-console.log('solution: ', ALGO.GRAPH.displaySolution(solution)); */
+let solution;
+const graph = ALGO.GRAPH.getGraph();
+solution = ALGO.ASTAR.solve(graph);
+console.log('solution: ', ALGO.GRAPH.displaySolution(solution));
 
-const chessboardSize = 8;
+const maxIteration = 100;
 const populationSize = 100;
+const chessboardSize = 8;
+const miscellaneous = { tournamentSize: Math.floor(populationSize / 5), plateau: 3 };
+
 const generator = ALGO.GENETIC.GENERATOR;
 const evaluator = ALGO.GENETIC.EVALUATOR;
 const crossover = ALGO.GENETIC.CROSSOVER;
 const mutator = ALGO.GENETIC.MUTATOR;
-
-const selector = ALGO.GENETIC.SELECTOR.note;
-const stop = [ALGO.GENETIC.STOP.quality, ALGO.GENETIC.STOP.iteration];
+const selector = ALGO.GENETIC.SELECTOR.elitist;
+const stop = [ALGO.GENETIC.STOP.quality];
 
 const GA = ALGO.GENETIC.construct(generator, evaluator, selector, crossover, mutator, stop, chessboardSize, populationSize);
-
-const test = generator(populationSize, chessboardSize);
-console.log(selector(test));
-
-const solution = ALGO.GENETIC.solve(GA);
-
-
-/* const test = [1,5,3,6,4,1,7,8];
-    // -> 8
-
-+ ----------------------------- +
-|   |   |   |   |   |   |   | x |
-|-------------------------------|
-|   |   |   |   |   |   | x |   |
-|-------------------------------|
-|   |   |   | x |   |   |   |   |
-|-------------------------------|
-|   | x |   |   |   |   |   |   |
-|-------------------------------|
-|   |   |   |   | x |   |   |   |
-|-------------------------------|
-|   |   | x |   |   |   |   |   |
-|-------------------------------|
-|   |   |   |   |   |   |   |   |
-|-------------------------------|
-| x |   |   |   |   | x |   |   |
-+ ----------------------------- + */
+solution = ALGO.GENETIC.solve(GA, maxIteration, miscellaneous);
+ALGO.GENETIC.displaySolution(solution);
